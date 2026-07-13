@@ -1,0 +1,32 @@
+# ==========================================================
+# QuizArena - Entorno de desarrollo local (Fase 0)
+# Levanta PostgreSQL y Redis con: docker compose up -d
+# ==========================================================
+services:
+
+  # Base de datos del Servicio de Juego (resultados persistidos)
+  postgres-juego:
+    image: postgres:16
+    container_name: quizarena-postgres-juego
+    environment:
+      POSTGRES_DB: juego_db
+      POSTGRES_USER: quizarena
+      POSTGRES_PASSWORD: quizarena123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_juego_data:/var/lib/postgresql/data
+
+  # Redis: estado compartido de las partidas (se usa en la Fase 5)
+  redis:
+    image: redis:7
+    container_name: quizarena-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_juego_data:
+  redis_data:
