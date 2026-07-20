@@ -35,10 +35,13 @@ public class Sala {
     private final List<Pregunta> preguntas;
     private int indicePreguntaActual;
 
+    /** Quien creo la sala (puede ser null: salas creadas antes de esta version, o demos sin token). */
+    private final UUID idCreador;
+
     public Sala(String codigo, List<Pregunta> preguntas, int maxJugadores,
-                String idBanco, String materia) {
+                String idBanco, String materia, UUID idCreador) {
         this(UUID.randomUUID().toString(), codigo, EstadoSala.ESPERANDO, 0, maxJugadores,
-                idBanco, materia, new LinkedHashMap<>(), preguntas, -1);
+                idBanco, materia, new LinkedHashMap<>(), preguntas, -1, idCreador);
     }
 
     @JsonCreator
@@ -51,7 +54,8 @@ public class Sala {
                 @JsonProperty("materia") String materia,
                 @JsonProperty("jugadores") Map<String, Jugador> jugadores,
                 @JsonProperty("preguntas") List<Pregunta> preguntas,
-                @JsonProperty("indicePreguntaActual") int indicePreguntaActual) {
+                @JsonProperty("indicePreguntaActual") int indicePreguntaActual,
+                @JsonProperty("idCreador") UUID idCreador) {
         this.id = id;
         this.codigo = codigo;
         this.estado = estado;
@@ -62,12 +66,35 @@ public class Sala {
         this.jugadores = jugadores != null ? jugadores : new LinkedHashMap<>();
         this.preguntas = preguntas;
         this.indicePreguntaActual = indicePreguntaActual;
+        this.idCreador = idCreador;
     }
 
+    /**
+     * Agrega un jugador, o si ya estaba (recarga de pagina, reconexion) lo
+     * reutiliza en vez de duplicarlo: conserva su id y su puntaje acumulado.
+     */
     public Jugador agregarJugador(String apodo, String idUsuario) {
+        Jugador existente = buscarJugador(apodo, idUsuario);
+        if (existente != null) {
+            existente.reconectar();
+            return existente;
+        }
         Jugador jugador = new Jugador(apodo, idUsuario);
         jugadores.put(jugador.getId(), jugador);
         return jugador;
+    }
+
+    private Jugador buscarJugador(String apodo, String idUsuario) {
+        boolean autenticado = idUsuario != null && !idUsuario.isBlank();
+        for (Jugador j : jugadores.values()) {
+            boolean jAutenticado = j.getIdUsuario() != null && !j.getIdUsuario().isBlank();
+            if (autenticado && jAutenticado) {
+                if (idUsuario.equals(j.getIdUsuario())) return j;
+            } else if (!autenticado && !jAutenticado) {
+                if (apodo.equals(j.getApodo())) return j;
+            }
+        }
+        return null;
     }
 
     public void removerJugador(String idJugador) { jugadores.remove(idJugador); }
@@ -102,6 +129,7 @@ public class Sala {
     public Map<String, Jugador> getJugadores() { return jugadores; }
     public List<Pregunta> getPreguntas() { return preguntas; }
     public int getIndicePreguntaActual() { return indicePreguntaActual; }
+    public UUID getIdCreador() { return idCreador; }
 
     @JsonIgnore
     public int getTotalRondas() { return preguntas.size(); }

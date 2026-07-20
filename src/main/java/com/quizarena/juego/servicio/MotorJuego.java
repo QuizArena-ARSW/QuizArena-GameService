@@ -51,6 +51,7 @@ public class MotorJuego {
         long tiempoLimiteMs = pregunta.getTiempoLimiteSegundos() * 1000L;
         int puntos = calcularPuntaje(correcta, tiempoRespuestaMs, tiempoLimiteMs);
         jugador.sumarPuntaje(puntos);
+        jugador.registrarRespuesta(pregunta.getId(), idOpcion);
         return puntos;
     }
 }

@@ -1,0 +1,8 @@
+# Renombrar a .dockerignore en la raiz de cada servicio Spring Boot
+target/
+.idea/
+*.iml
+.git/
+.gitignore
+logs/
+*.log

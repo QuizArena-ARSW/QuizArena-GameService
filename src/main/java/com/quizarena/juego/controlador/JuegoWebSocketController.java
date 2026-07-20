@@ -8,6 +8,7 @@ import com.quizarena.juego.modelo.*;
 import com.quizarena.juego.modelo.mensajes.*;
 import com.quizarena.juego.servicio.GestorSalas;
 import com.quizarena.juego.servicio.MotorJuego;
+import com.quizarena.juego.servicio.RepositorioChatRedis;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +18,9 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Controller;
 
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Controlador del TIEMPO REAL (Fase 5).
@@ -35,21 +38,26 @@ public class JuegoWebSocketController {
 
     private static final Logger log = LoggerFactory.getLogger(JuegoWebSocketController.class);
 
+    private static final int TEXTO_CHAT_MAX = 300;
+
     private final GestorSalas gestorSalas;
     private final MotorJuego motorJuego;
     private final PublicadorEventos publicador;
     private final ClienteIdentidad clienteIdentidad;
     private final MetricasJuego metricas;
+    private final RepositorioChatRedis repositorioChat;
 
     public JuegoWebSocketController(GestorSalas gestorSalas, MotorJuego motorJuego,
                                     PublicadorEventos publicador,
                                     ClienteIdentidad clienteIdentidad,
-                                    MetricasJuego metricas) {
+                                    MetricasJuego metricas,
+                                    RepositorioChatRedis repositorioChat) {
         this.gestorSalas = gestorSalas;
         this.motorJuego = motorJuego;
         this.publicador = publicador;
         this.clienteIdentidad = clienteIdentidad;
         this.metricas = metricas;
+        this.repositorioChat = repositorioChat;
     }
 
     // ---- 1. Un jugador se une ----
@@ -70,6 +78,11 @@ public class JuegoWebSocketController {
         publicador.publicarTexto("/topic/sala/" + codigo + "/jugador/" + nuevo[0].getApodo(),
                 nuevo[0].getId());
         publicador.publicar("/topic/sala/" + codigo, new EventoLista(jugadoresEvento(sala)));
+
+        // Historial de chat existente, solo para quien se acaba de unir (no se
+        // difunde a toda la sala: cada quien lo recibe una vez, al conectarse).
+        publicador.publicar("/topic/sala/" + codigo + "/jugador/" + nuevo[0].getApodo() + "/chat-historial",
+                repositorioChat.historial(codigo));
     }
 
     // ---- 2. Iniciar la partida ----
@@ -79,7 +92,7 @@ public class JuegoWebSocketController {
         if (sala == null) return;
         metricas.partidaIniciada();
         log.info("evento=partida_iniciada sala={} jugadores={}", codigo, sala.getJugadores().size());
-        avanzar(codigo);
+        avanzar(codigo, null);
     }
 
     // ---- 3. Responder (aqui se mide la latencia) ----
@@ -106,22 +119,53 @@ public class JuegoWebSocketController {
     }
 
     // ---- 4. Siguiente pregunta ----
+    // El cliente lo dispara manualmente (boton) o automaticamente cuando se
+    // le acaba el tiempo. Como cualquier jugador puede disparar el avance
+    // automatico, "ronda" permite ignorar duplicados: si dos jugadores llegan
+    // a 0 casi al mismo tiempo, solo el primero realmente avanza la sala.
     @MessageMapping("/sala/{codigo}/siguiente")
-    public void siguiente(@DestinationVariable String codigo) {
-        avanzar(codigo);
+    public void siguiente(@DestinationVariable String codigo, @Payload SiguienteRequest req) {
+        avanzar(codigo, req != null ? req.ronda() : null);
+    }
+
+    // ---- 5. Chat de la sala ----
+    // No pasa por gestorSalas.modificar: el chat no es parte del estado de
+    // juego (no necesita el bloqueo distribuido), vive en su propia clave de
+    // Redis con el mismo ciclo de vida que la sala (ver RepositorioChatRedis).
+    @MessageMapping("/sala/{codigo}/chat")
+    public void chat(@DestinationVariable String codigo, @Payload MensajeChatRequest req) {
+        if (req.texto() == null || req.texto().isBlank()) return;
+
+        Sala sala = gestorSalas.buscarSala(codigo);
+        if (sala == null) return;
+
+        Jugador jugador = sala.getJugadores().get(req.idJugador());
+        if (jugador == null) return;
+
+        String texto = req.texto().strip();
+        if (texto.length() > TEXTO_CHAT_MAX) texto = texto.substring(0, TEXTO_CHAT_MAX);
+
+        EventoChat mensaje = new EventoChat(jugador.getId(), jugador.getApodo(), texto, System.currentTimeMillis());
+        repositorioChat.agregar(codigo, mensaje);
+        publicador.publicar("/topic/sala/" + codigo + "/chat", mensaje);
     }
 
     // ===================== Auxiliares =====================
 
     /** Avanza a la siguiente pregunta, o finaliza la partida si no hay mas. */
-    private void avanzar(String codigo) {
+    private void avanzar(String codigo, Integer rondaEsperada) {
         final Pregunta[] preguntaRef = new Pregunta[1];
+        final boolean[] avanzo = new boolean[] { true };
 
         Sala sala = gestorSalas.modificar(codigo, s -> {
+            if (rondaEsperada != null && s.getRondaActual() != rondaEsperada) {
+                avanzo[0] = false;
+                return;
+            }
             preguntaRef[0] = s.siguientePregunta();
             if (preguntaRef[0] == null) s.finalizar();
         });
-        if (sala == null) return;
+        if (sala == null || !avanzo[0]) return;
 
         Pregunta pregunta = preguntaRef[0];
 
@@ -130,7 +174,7 @@ public class JuegoWebSocketController {
             metricas.partidaFinalizada();
             log.info("evento=partida_finalizada sala={} jugadores={}", codigo, sala.getJugadores().size());
             guardarResultados(sala);
-            publicador.publicar("/topic/sala/" + codigo, new EventoFin(ranking(sala)));
+            publicador.publicar("/topic/sala/" + codigo, new EventoFin(ranking(sala), resumenPorJugador(sala)));
             return;
         }
 
@@ -162,6 +206,35 @@ public class JuegoWebSocketController {
                 log.warn("evento=error_historial jugador={} motivo={}", j.getApodo(), e.getMessage());
             }
         }
+    }
+
+    /** Arma, para cada jugador, la lista de sus respuestas pregunta por pregunta. */
+    private Map<String, List<RespuestaResumenDTO>> resumenPorJugador(Sala sala) {
+        Map<String, List<RespuestaResumenDTO>> resultado = new LinkedHashMap<>();
+        for (Jugador jugador : sala.getListaJugadores()) {
+            List<RespuestaResumenDTO> resumen = sala.getPreguntas().stream()
+                    .map(pregunta -> resumenDeUnaPregunta(pregunta, jugador))
+                    .toList();
+            resultado.put(jugador.getId(), resumen);
+        }
+        return resultado;
+    }
+
+    private RespuestaResumenDTO resumenDeUnaPregunta(Pregunta pregunta, Jugador jugador) {
+        String idElegida = jugador.getRespuestas().get(pregunta.getId());
+        Opcion correcta = pregunta.getOpciones().stream()
+                .filter(Opcion::isEsCorrecta).findFirst().orElse(null);
+        Opcion elegida = idElegida == null ? null : pregunta.getOpciones().stream()
+                .filter(o -> o.getId().equals(idElegida)).findFirst().orElse(null);
+
+        return new RespuestaResumenDTO(
+                pregunta.getId(),
+                pregunta.getEnunciado(),
+                elegida != null ? elegida.getId() : null,
+                elegida != null ? elegida.getTexto() : null,
+                elegida != null && elegida.isEsCorrecta(),
+                correcta != null ? correcta.getTexto() : null
+        );
     }
 
     private List<EventoJugador> jugadoresEvento(Sala sala) {

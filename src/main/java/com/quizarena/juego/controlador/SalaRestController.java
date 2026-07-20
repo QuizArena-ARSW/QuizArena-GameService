@@ -2,10 +2,12 @@ package com.quizarena.juego.controlador;
 
 import com.quizarena.juego.modelo.Sala;
 import com.quizarena.juego.servicio.GestorSalas;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Controlador REST para operaciones que NO son de tiempo real:
@@ -27,13 +29,13 @@ public class SalaRestController {
      * El cliente envia: { "idBanco": "37d30806-..." }
      */
     @PostMapping
-    public ResponseEntity<?> crearSala(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> crearSala(@RequestBody Map<String, String> body, HttpServletRequest req) {
         String idBanco = body.get("idBanco");
         if (idBanco == null || idBanco.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Falta el idBanco"));
         }
         try {
-            Sala sala = gestorSalas.crearSala(idBanco);
+            Sala sala = gestorSalas.crearSala(idBanco, idCreadorDe(req));
             return ResponseEntity.ok(Map.of(
                     "codigo", sala.getCodigo(),
                     "estado", sala.getEstado().name(),
@@ -51,13 +53,19 @@ public class SalaRestController {
      * Util para probar el tiempo real rapido. POST /api/salas/demo
      */
     @PostMapping("/demo")
-    public Map<String, Object> crearSalaDemo() {
-        Sala sala = gestorSalas.crearSalaDemo();
+    public Map<String, Object> crearSalaDemo(HttpServletRequest req) {
+        Sala sala = gestorSalas.crearSalaDemo(idCreadorDe(req));
         return Map.of(
                 "codigo", sala.getCodigo(),
                 "estado", sala.getEstado().name(),
                 "totalRondas", sala.getTotalRondas()
         );
+    }
+
+    /** El creador es quien trae un token valido (FiltroJwtOpcional); null si no hay sesion (p.ej. demo anonimo). */
+    private UUID idCreadorDe(HttpServletRequest req) {
+        String idUsuario = (String) req.getAttribute("idUsuario");
+        return idUsuario != null ? UUID.fromString(idUsuario) : null;
     }
 
     /** Consulta el estado de una sala. */

@@ -7,6 +7,7 @@ import com.quizarena.juego.modelo.Sala;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -38,20 +39,20 @@ public class GestorSalas {
     }
 
     /** Crea una sala con las preguntas reales del banco (las pide a Identidad). */
-    public Sala crearSala(String idBanco) {
+    public Sala crearSala(String idBanco, UUID idCreador) {
         DatosBanco datos = clienteIdentidad.obtenerDatosBanco(idBanco);
         String codigo = generarCodigoUnico();
         Sala sala = new Sala(codigo, datos.preguntas(), MAX_JUGADORES,
-                datos.idBanco(), datos.materia());
+                datos.idBanco(), datos.materia(), idCreador);
         repositorio.guardar(sala);
         return sala;
     }
 
     /** Crea una sala con preguntas de ejemplo (sin depender de Identidad). */
-    public Sala crearSalaDemo() {
+    public Sala crearSalaDemo(UUID idCreador) {
         String codigo = generarCodigoUnico();
         Sala sala = new Sala(codigo, BancoPreguntasDemo.preguntasEjemplo(), MAX_JUGADORES,
-                null, "Demo");
+                null, "Demo", idCreador);
         repositorio.guardar(sala);
         return sala;
     }
