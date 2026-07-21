@@ -8,11 +8,13 @@ on:
 
 jobs:
   test:
-    name: Pruebas (JUnit)
+    name: Pruebas (JUnit) + SonarCloud
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configurar JDK 17
         uses: actions/setup-java@v4
@@ -21,5 +23,20 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Ejecutar pruebas
-        run: mvn -B test
+      - name: Cache de SonarCloud
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Ejecutar pruebas y analisis de SonarCloud
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          mvn -B test sonar:sonar
+          -Dsonar.projectKey=QuizArena-ARSW_QuizArena-GameService
+          -Dsonar.organization=quizarena-arsw
+          -Dsonar.host.url=https://sonarcloud.io
+          -Dsonar.token=$SONAR_TOKEN
+          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
