@@ -72,7 +72,7 @@ public class JuegoWebSocketController {
 
         metricas.jugadorEntro();
         log.info("evento=jugador_unido sala={} apodo={} jugadores={}",
-                codigo, req.apodo(), sala.getJugadores().size());
+                saneado(codigo), saneado(req.apodo()), sala.getJugadores().size());
 
         // Su id personal (texto plano) y la lista actualizada para toda la sala
         publicador.publicarTexto("/topic/sala/" + codigo + "/jugador/" + nuevo[0].getApodo(),
@@ -91,7 +91,7 @@ public class JuegoWebSocketController {
         Sala sala = gestorSalas.modificar(codigo, Sala::iniciar);
         if (sala == null) return;
         metricas.partidaIniciada();
-        log.info("evento=partida_iniciada sala={} jugadores={}", codigo, sala.getJugadores().size());
+        log.info("evento=partida_iniciada sala={} jugadores={}", saneado(codigo), sala.getJugadores().size());
         avanzar(codigo, null);
     }
 
@@ -113,7 +113,7 @@ public class JuegoWebSocketController {
         if (sala == null) return;
 
         metricas.respuestaProcesada(acerto[0]);
-        log.info("evento=respuesta sala={} correcta={} ronda={}", codigo, acerto[0], sala.getRondaActual());
+        log.info("evento=respuesta sala={} correcta={} ronda={}", saneado(codigo), acerto[0], sala.getRondaActual());
 
         publicador.publicar("/topic/sala/" + codigo, new EventoMarcador(ranking(sala)));
     }
@@ -172,7 +172,7 @@ public class JuegoWebSocketController {
         if (pregunta == null) {
             // Fin de la partida
             metricas.partidaFinalizada();
-            log.info("evento=partida_finalizada sala={} jugadores={}", codigo, sala.getJugadores().size());
+            log.info("evento=partida_finalizada sala={} jugadores={}", saneado(codigo), sala.getJugadores().size());
             guardarResultados(sala);
             publicador.publicar("/topic/sala/" + codigo, new EventoFin(ranking(sala), resumenPorJugador(sala)));
             return;
@@ -248,5 +248,15 @@ public class JuegoWebSocketController {
                 .sorted(Comparator.comparingInt(Jugador::getPuntajeTotal).reversed())
                 .map(j -> new EventoJugador(j.getId(), j.getApodo(), j.getPuntajeTotal(), j.isConectado()))
                 .toList();
+    }
+
+    /**
+     * Quita saltos de linea de un valor que viene del cliente (codigo de
+     * sala, apodo) antes de escribirlo en el log: sin esto, alguien podria
+     * inyectar lineas de log falsas (ej. un apodo con un "\n" seguido de un
+     * evento inventado).
+     */
+    private static String saneado(String valor) {
+        return valor == null ? null : valor.replace("\n", "").replace("\r", "");
     }
 }
