@@ -19,6 +19,7 @@ import com.quizarena.juego.modelo.mensajes.SiguienteRequest;
 import com.quizarena.juego.modelo.mensajes.UnirseRequest;
 import com.quizarena.juego.servicio.GestorSalas;
 import com.quizarena.juego.servicio.MotorJuego;
+import com.quizarena.juego.servicio.RastreadorConexiones;
 import com.quizarena.juego.servicio.RepositorioChatRedis;
 import io.micrometer.core.instrument.Timer;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,13 +58,15 @@ class JuegoWebSocketControllerTest {
     @Mock ClienteIdentidad clienteIdentidad;
     @Mock MetricasJuego metricas;
     @Mock RepositorioChatRedis repositorioChat;
+    @Mock RastreadorConexiones rastreadorConexiones;
 
     JuegoWebSocketController controller;
 
     @BeforeEach
     void setUp() {
         controller = new JuegoWebSocketController(
-                gestorSalas, new MotorJuego(), publicador, clienteIdentidad, metricas, repositorioChat);
+                gestorSalas, new MotorJuego(), publicador, clienteIdentidad, metricas, repositorioChat,
+                rastreadorConexiones);
         // gestorSalas.modificar aplica el cambio sobre el objeto Sala real y lo
         // "guarda" devolviendolo — simula fielmente leer/mutar/guardar en Redis.
         lenient().when(gestorSalas.modificar(eq(CODIGO), any())).thenAnswer(inv -> {
@@ -93,10 +96,10 @@ class JuegoWebSocketControllerTest {
         Sala sala = salaConDosPreguntas();
         when(repositorioChat.historial(CODIGO)).thenReturn(List.of());
 
-        controller.unirse(CODIGO, new UnirseRequest("Juan", null));
+        controller.unirse(CODIGO, new UnirseRequest("Juan", null), "sesion-ws-1");
 
         assertThat(sala.getJugadores()).hasSize(1);
-        verify(metricas).jugadorEntro();
+        verify(rastreadorConexiones).registrarConexion("sesion-ws-1");
         verify(publicador).publicarTexto(eq("/topic/sala/" + CODIGO + "/jugador/Juan"), anyString());
 
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
@@ -110,9 +113,9 @@ class JuegoWebSocketControllerTest {
     void unirseNoHaceNadaSiLaSalaNoExiste() {
         salaActual = null;
 
-        controller.unirse(CODIGO, new UnirseRequest("Juan", null));
+        controller.unirse(CODIGO, new UnirseRequest("Juan", null), "sesion-ws-1");
 
-        verifyNoInteractions(publicador, metricas);
+        verifyNoInteractions(publicador, metricas, rastreadorConexiones);
     }
 
     // ---- iniciar ----

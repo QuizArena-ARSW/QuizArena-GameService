@@ -8,11 +8,13 @@ import com.quizarena.juego.modelo.*;
 import com.quizarena.juego.modelo.mensajes.*;
 import com.quizarena.juego.servicio.GestorSalas;
 import com.quizarena.juego.servicio.MotorJuego;
+import com.quizarena.juego.servicio.RastreadorConexiones;
 import com.quizarena.juego.servicio.RepositorioChatRedis;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Controller;
@@ -47,29 +49,37 @@ public class JuegoWebSocketController {
     private final ClienteIdentidad clienteIdentidad;
     private final MetricasJuego metricas;
     private final RepositorioChatRedis repositorioChat;
+    private final RastreadorConexiones rastreadorConexiones;
 
     public JuegoWebSocketController(GestorSalas gestorSalas, MotorJuego motorJuego,
                                     PublicadorEventos publicador,
                                     ClienteIdentidad clienteIdentidad,
                                     MetricasJuego metricas,
-                                    RepositorioChatRedis repositorioChat) {
+                                    RepositorioChatRedis repositorioChat,
+                                    RastreadorConexiones rastreadorConexiones) {
         this.gestorSalas = gestorSalas;
         this.motorJuego = motorJuego;
         this.publicador = publicador;
         this.clienteIdentidad = clienteIdentidad;
         this.metricas = metricas;
         this.repositorioChat = repositorioChat;
+        this.rastreadorConexiones = rastreadorConexiones;
     }
 
     // ---- 1. Un jugador se une ----
     @MessageMapping("/sala/{codigo}/unirse")
-    public void unirse(@DestinationVariable String codigo, @Payload UnirseRequest req) {
+    public void unirse(@DestinationVariable String codigo, @Payload UnirseRequest req,
+                       @Header("simpSessionId") String idSesion) {
         final Jugador[] nuevo = new Jugador[1];
 
         Sala sala = gestorSalas.modificar(codigo, s -> nuevo[0] = s.agregarJugador(req.apodo(), req.idUsuario()));
         if (sala == null || nuevo[0] == null) return;
 
-        metricas.jugadorEntro();
+        // "jugadorEntro" queda ligado a ESTA sesion de WebSocket: cuando se
+        // desconecte (RastreadorConexiones escucha SessionDisconnectEvent),
+        // se resta sola. Asi "jugadores conectados" es un numero en vivo,
+        // no un contador que solo sube.
+        rastreadorConexiones.registrarConexion(idSesion);
         log.info("evento=jugador_unido sala={} apodo={} jugadores={}",
                 saneado(codigo), saneado(req.apodo()), sala.getJugadores().size());
 
