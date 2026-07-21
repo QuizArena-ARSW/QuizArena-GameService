@@ -88,10 +88,10 @@ public class Sala {
         boolean autenticado = idUsuario != null && !idUsuario.isBlank();
         for (Jugador j : jugadores.values()) {
             boolean jAutenticado = j.getIdUsuario() != null && !j.getIdUsuario().isBlank();
-            if (autenticado && jAutenticado) {
-                if (idUsuario.equals(j.getIdUsuario())) return j;
-            } else if (!autenticado && !jAutenticado) {
-                if (apodo.equals(j.getApodo())) return j;
+            if (autenticado && jAutenticado && idUsuario.equals(j.getIdUsuario())) {
+                return j;
+            } else if (!autenticado && !jAutenticado && apodo.equals(j.getApodo())) {
+                return j;
             }
         }
         return null;

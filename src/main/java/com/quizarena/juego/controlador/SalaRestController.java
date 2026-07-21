@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -18,6 +19,11 @@ import java.util.UUID;
 
 public class SalaRestController {
 
+    private static final String CLAVE_ERROR = "error";
+    private static final String CLAVE_CODIGO = "codigo";
+    private static final String CLAVE_ESTADO = "estado";
+    private static final String CLAVE_TOTAL_RONDAS = "totalRondas";
+
     private final GestorSalas gestorSalas;
 
     public SalaRestController(GestorSalas gestorSalas) {
@@ -29,22 +35,18 @@ public class SalaRestController {
      * El cliente envia: { "idBanco": "37d30806-..." }
      */
     @PostMapping
-    public ResponseEntity<?> crearSala(@RequestBody Map<String, String> body, HttpServletRequest req) {
+    public ResponseEntity<Object> crearSala(@RequestBody Map<String, String> body, HttpServletRequest req) {
         String idBanco = body.get("idBanco");
         if (idBanco == null || idBanco.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Falta el idBanco"));
+            return ResponseEntity.badRequest().body(Map.of(CLAVE_ERROR, "Falta el idBanco"));
         }
         try {
             Sala sala = gestorSalas.crearSala(idBanco, idCreadorDe(req));
-            return ResponseEntity.ok(Map.of(
-                    "codigo", sala.getCodigo(),
-                    "estado", sala.getEstado().name(),
-                    "totalRondas", sala.getTotalRondas()
-            ));
+            return ResponseEntity.ok(resumenBasico(sala));
         } catch (Exception e) {
             // Si Identidad no responde o el banco no existe, avisamos claramente
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "No se pudo crear la sala: " + e.getMessage()));
+                    CLAVE_ERROR, "No se pudo crear la sala: " + e.getMessage()));
         }
     }
 
@@ -55,11 +57,7 @@ public class SalaRestController {
     @PostMapping("/demo")
     public Map<String, Object> crearSalaDemo(HttpServletRequest req) {
         Sala sala = gestorSalas.crearSalaDemo(idCreadorDe(req));
-        return Map.of(
-                "codigo", sala.getCodigo(),
-                "estado", sala.getEstado().name(),
-                "totalRondas", sala.getTotalRondas()
-        );
+        return resumenBasico(sala);
     }
 
     /** El creador es quien trae un token valido (FiltroJwtOpcional); null si no hay sesion (p.ej. demo anonimo). */
@@ -73,14 +71,20 @@ public class SalaRestController {
     public Map<String, Object> consultarSala(@PathVariable String codigo) {
         Sala sala = gestorSalas.buscarSala(codigo);
         if (sala == null) {
-            return Map.of("error", "Sala no encontrada");
+            return Map.of(CLAVE_ERROR, "Sala no encontrada");
         }
-        return Map.of(
-                "codigo", sala.getCodigo(),
-                "estado", sala.getEstado().name(),
-                "jugadores", sala.getJugadores().size(),
-                "ronda", sala.getRondaActual(),
-                "totalRondas", sala.getTotalRondas()
-        );
+        Map<String, Object> resumen = resumenBasico(sala);
+        resumen.put("jugadores", sala.getJugadores().size());
+        resumen.put("ronda", sala.getRondaActual());
+        return resumen;
+    }
+
+    /** Campos comunes (codigo, estado, totalRondas) que devuelven varios endpoints. */
+    private Map<String, Object> resumenBasico(Sala sala) {
+        Map<String, Object> resumen = new LinkedHashMap<>();
+        resumen.put(CLAVE_CODIGO, sala.getCodigo());
+        resumen.put(CLAVE_ESTADO, sala.getEstado().name());
+        resumen.put(CLAVE_TOTAL_RONDAS, sala.getTotalRondas());
+        return resumen;
     }
 }

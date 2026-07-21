@@ -22,6 +22,8 @@ import java.util.Map;
 @RequestMapping("/api/salas")
 public class InvitacionSalaController {
 
+    private static final String CLAVE_ERROR = "error";
+
     private final GestorSalas gestorSalas;
     private final RepositorioInvitacionesRedis repositorioInvitaciones;
 
@@ -31,25 +33,25 @@ public class InvitacionSalaController {
     }
 
     @PostMapping("/{codigo}/invitaciones")
-    public ResponseEntity<?> invitar(@PathVariable String codigo,
+    public ResponseEntity<Object> invitar(@PathVariable String codigo,
                                      @RequestBody Map<String, String> body,
                                      HttpServletRequest req) {
         String idUsuario = (String) req.getAttribute("idUsuario");
         if (idUsuario == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Se requiere iniciar sesion"));
+            return ResponseEntity.status(401).body(Map.of(CLAVE_ERROR, "Se requiere iniciar sesion"));
         }
 
         String idAmigo = body.get("idAmigo");
         if (idAmigo == null || idAmigo.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Falta el idAmigo"));
+            return ResponseEntity.badRequest().body(Map.of(CLAVE_ERROR, "Falta el idAmigo"));
         }
 
         Sala sala = gestorSalas.buscarSala(codigo);
         if (sala == null) {
-            return ResponseEntity.status(404).body(Map.of("error", "Sala no encontrada"));
+            return ResponseEntity.status(404).body(Map.of(CLAVE_ERROR, "Sala no encontrada"));
         }
         if (sala.getIdCreador() == null || !sala.getIdCreador().toString().equals(idUsuario)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Solo quien creo la sala puede invitar"));
+            return ResponseEntity.status(403).body(Map.of(CLAVE_ERROR, "Solo quien creo la sala puede invitar"));
         }
 
         String nombreInvitador = body.getOrDefault("nombreInvitador", "Un amigo");
@@ -60,7 +62,7 @@ public class InvitacionSalaController {
     }
 
     @GetMapping("/invitaciones")
-    public ResponseEntity<?> misInvitaciones(HttpServletRequest req) {
+    public ResponseEntity<Object> misInvitaciones(HttpServletRequest req) {
         String idUsuario = (String) req.getAttribute("idUsuario");
         if (idUsuario == null) {
             return ResponseEntity.status(401).body(List.of());

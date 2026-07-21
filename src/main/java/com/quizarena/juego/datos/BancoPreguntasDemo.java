@@ -14,6 +14,8 @@ import java.util.List;
  */
 public class BancoPreguntasDemo {
 
+    private BancoPreguntasDemo() { }
+
     public static List<Pregunta> preguntasEjemplo() {
         return List.of(
                 new Pregunta(

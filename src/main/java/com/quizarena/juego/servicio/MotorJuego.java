@@ -33,7 +33,7 @@ public class MotorJuego {
             return PUNTOS_BASE;
         }
         // Factor de rapidez: 1.0 si responde al instante, baja hacia 0.5 al agotar el tiempo
-        double factorRapidez = 1.0 - (0.5 * Math.min(tiempoRespuesta, tiempoLimiteMs) / (double) tiempoLimiteMs);
+        double factorRapidez = 1.0 - (0.5 * Math.min(tiempoRespuesta, tiempoLimiteMs) / tiempoLimiteMs);
         return (int) Math.round(PUNTOS_BASE * factorRapidez);
     }
 

@@ -39,6 +39,7 @@ public class JuegoWebSocketController {
     private static final Logger log = LoggerFactory.getLogger(JuegoWebSocketController.class);
 
     private static final int TEXTO_CHAT_MAX = 300;
+    private static final String PREFIJO_TOPIC_SALA = "/topic/sala/";
 
     private final GestorSalas gestorSalas;
     private final MotorJuego motorJuego;
@@ -65,9 +66,7 @@ public class JuegoWebSocketController {
     public void unirse(@DestinationVariable String codigo, @Payload UnirseRequest req) {
         final Jugador[] nuevo = new Jugador[1];
 
-        Sala sala = gestorSalas.modificar(codigo, s -> {
-            nuevo[0] = s.agregarJugador(req.apodo(), req.idUsuario());
-        });
+        Sala sala = gestorSalas.modificar(codigo, s -> nuevo[0] = s.agregarJugador(req.apodo(), req.idUsuario()));
         if (sala == null || nuevo[0] == null) return;
 
         metricas.jugadorEntro();
@@ -75,13 +74,13 @@ public class JuegoWebSocketController {
                 saneado(codigo), saneado(req.apodo()), sala.getJugadores().size());
 
         // Su id personal (texto plano) y la lista actualizada para toda la sala
-        publicador.publicarTexto("/topic/sala/" + codigo + "/jugador/" + nuevo[0].getApodo(),
+        publicador.publicarTexto(PREFIJO_TOPIC_SALA + codigo + "/jugador/" + nuevo[0].getApodo(),
                 nuevo[0].getId());
-        publicador.publicar("/topic/sala/" + codigo, new EventoLista(jugadoresEvento(sala)));
+        publicador.publicar(PREFIJO_TOPIC_SALA + codigo, new EventoLista(jugadoresEvento(sala)));
 
         // Historial de chat existente, solo para quien se acaba de unir (no se
         // difunde a toda la sala: cada quien lo recibe una vez, al conectarse).
-        publicador.publicar("/topic/sala/" + codigo + "/jugador/" + nuevo[0].getApodo() + "/chat-historial",
+        publicador.publicar(PREFIJO_TOPIC_SALA + codigo + "/jugador/" + nuevo[0].getApodo() + "/chat-historial",
                 repositorioChat.historial(codigo));
     }
 
@@ -115,7 +114,7 @@ public class JuegoWebSocketController {
         metricas.respuestaProcesada(acerto[0]);
         log.info("evento=respuesta sala={} correcta={} ronda={}", saneado(codigo), acerto[0], sala.getRondaActual());
 
-        publicador.publicar("/topic/sala/" + codigo, new EventoMarcador(ranking(sala)));
+        publicador.publicar(PREFIJO_TOPIC_SALA + codigo, new EventoMarcador(ranking(sala)));
     }
 
     // ---- 4. Siguiente pregunta ----
@@ -147,7 +146,7 @@ public class JuegoWebSocketController {
 
         EventoChat mensaje = new EventoChat(jugador.getId(), jugador.getApodo(), texto, System.currentTimeMillis());
         repositorioChat.agregar(codigo, mensaje);
-        publicador.publicar("/topic/sala/" + codigo + "/chat", mensaje);
+        publicador.publicar(PREFIJO_TOPIC_SALA + codigo + "/chat", mensaje);
     }
 
     // ===================== Auxiliares =====================
@@ -174,7 +173,7 @@ public class JuegoWebSocketController {
             metricas.partidaFinalizada();
             log.info("evento=partida_finalizada sala={} jugadores={}", saneado(codigo), sala.getJugadores().size());
             guardarResultados(sala);
-            publicador.publicar("/topic/sala/" + codigo, new EventoFin(ranking(sala), resumenPorJugador(sala)));
+            publicador.publicar(PREFIJO_TOPIC_SALA + codigo, new EventoFin(ranking(sala), resumenPorJugador(sala)));
             return;
         }
 
@@ -182,7 +181,7 @@ public class JuegoWebSocketController {
                 .map(o -> new EventoOpcion(o.getId(), o.getTexto()))
                 .toList();
 
-        publicador.publicar("/topic/sala/" + codigo, new EventoPregunta(
+        publicador.publicar(PREFIJO_TOPIC_SALA + codigo, new EventoPregunta(
                 sala.getRondaActual(), sala.getTotalRondas(),
                 pregunta.getId(), pregunta.getEnunciado(),
                 opciones, pregunta.getTiempoLimiteSegundos()
